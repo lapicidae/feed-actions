@@ -7,5 +7,5 @@ services:
       - './feed-actions:/config:rw'
     environment:
       - TZ=Europe/Berlin
-    network_mode: none
+    network_mode: host
     restart: unless-stopped
