@@ -1,0 +1,11 @@
+version: '2.4'
+services:
+  feed-actions:
+    image: 'lapicidae/feed-actions:latest'
+    container_name: feed-actions
+    volumes:
+      - './feed-actions:/config:rw'
+    environment:
+      - TZ=Europe/Berlin
+    network_mode: none
+    restart: unless-stopped
