@@ -5,7 +5,7 @@
 CFGDIR="/config"
 CFG_FILE="$CFGDIR/config.cfg"
 STAMPSDIR="$CFGDIR/.stamps"
-#DEMO_MODE=1	# Trigger will not be executed
+DEMO_MODE=0	# Trigger will not be executed
 
 
 ### Functions
@@ -180,7 +180,7 @@ for section in ${CFG_SECTION[*]}; do
 		OLD=$(<$STAMP)
 		if [ $OLD != $CURRENT ]; then
 			echo "$section: Feed updated"
-			if [ $DEMO_MODE == 1 ]; then
+			if [ $DEMO_MODE = "1" ]; then
 				echo $TRIGGER
 			else
 				eval $TRIGGER > /dev/null 2>&1
