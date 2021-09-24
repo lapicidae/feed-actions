@@ -14,7 +14,7 @@ pipeline {
 	}
 	agent any
 	stages {
-		stage('Init') {		// Plugin "build user vars" is needed!
+		stage('Init') {
 			steps{
 				echo 'Initializing....'
 				script {
