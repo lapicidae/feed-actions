@@ -87,7 +87,7 @@ function usage {
 		echo "ERROR: $1" 1>&2
 	fi
 	echo "Usage: $0 [-u <feed url>] [-f <config file>] [-s <run only section>] [-t <trigger>] [-d <debug>] [-z <demo>]" 1>&2
-	echo "Example: $0 -u http://www.test.org/feed.atom -t echo TEST" 1>&2
+	echo "Example: $0 -u https://opensource.org/taxonomy/term/8/feed -t 'echo TEST'" 1>&2
 	echo "##############################" 1>&2
 	exit 1
 }
@@ -161,7 +161,7 @@ elif [ -z "${URL}" ] || [ -z "${TRIGGER}" ]; then
 	usage "URL or Trigger missing!"
 fi
 
-if [ ! -d "$STAMPSDIR" ]; then
+if [ ! -d "$STAMPSDIR" ] && [ $DEMO_MODE != "1" ]; then
 	mkdir -p $STAMPSDIR
 fi
 
@@ -179,9 +179,10 @@ for section in ${CFG_SECTION[*]}; do
 	if [ -f "$STAMP" ]; then
 		OLD=$(<$STAMP)
 		if [ $OLD != $CURRENT ]; then
-			echo "$section: Feed updated"
+			echo "$section: Feed updated $(date --date=@$CURRENT +'%Y-%m-%d %H:%M:%S %z')"
 			if [ $DEMO_MODE = "1" ]; then
 				echo $TRIGGER
+				echo ">>> Demo Mode <<<"
 			else
 				eval $TRIGGER > /dev/null 2>&1
 				echo $CURRENT > $STAMP
@@ -189,13 +190,18 @@ for section in ${CFG_SECTION[*]}; do
 		fi
 	else
 		echo "$section: First run"
-		echo $CURRENT > $STAMP
+		if [ $DEMO_MODE != "1" ]; then
+			echo $CURRENT > $STAMP
+		else
+			echo ">>> Demo Mode <<<"
+		fi
 	fi
 
 	if [ ! -z "${DEBUG}" ]; then
 		echo "################## DEBUG ##################"
 		echo -e "SECTION\t=\t$section"
 		echo -e "URL\t=\t$URL"
+		echo -e "UPDATED\t=\t$(date --date=@$CURRENT +'%Y-%m-%d %H:%M:%S %z')"
 		echo -e "TRIGGER\t=\t$TRIGGER"
 		echo "###########################################"
 	fi
