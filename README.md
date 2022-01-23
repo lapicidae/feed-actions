@@ -73,6 +73,7 @@ Simply edit the two files provided.
 ```bash
 2 3 * * * /bin/bash /usr/bin/feed-actions
 ```
+Change the time at which the magic happens.  
 crontab exampels -> [crontab.guru](https://crontab.guru)  
 Do not change the `/bin/bash /usr/bin/feed-actions` part!
 
