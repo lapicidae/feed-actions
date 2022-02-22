@@ -94,13 +94,17 @@ function usage {
 
 # get Date from Web-Feed via "rsstail" and convert to Unix Timestamp
 function getdate {
-	feeddate=$(rsstail -1 -n 1 -p -z -N -u $1 | tail -n1 | sed 's/^[ \t]*//')
-	date -d "${feeddate}" +"%s"
+	local feeddate=$(rsstail -1 -n 1 -p -z -N -u "$1" 2>/dev/null | tail -n1 | sed 's/^[ \t]*//')
+	if [ -z $feeddate ]; then
+		echo "ERROR"
+	else
+		date -d "${feeddate}" +"%s"
+	fi
 }
 
 # check if URL valid
 function checkurl {
-	CHECK='(https?|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
+	local CHECK='(https?|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
 	if ! [[ $1 =~ $CHECK ]]; then
 		usage "invalid URL"
 	fi
@@ -175,6 +179,11 @@ for section in ${CFG_SECTION[*]}; do
 
 	STAMP="$STAMPSDIR/$(sha $section).stamp"
 	CURRENT=$(getdate $URL)
+
+	if [ $CURRENT = "ERROR" ]; then
+		echo "Parser error: skipping [$section]"
+		continue
+	fi
 
 	if [ -f "$STAMP" ]; then
 		OLD=$(<$STAMP)
