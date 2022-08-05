@@ -1,4 +1,4 @@
-[![feed-actions](feed-actions-logo.svg)](https://projects.vdr-developer.org/git/feed-actions.git)
+[![feed-actions](feed-actions-logo.svg)](https://github.com/lapicidae/feed-actions)
 
 Trigger action if Web-Feed (RSS or Atom) changes.
 
