@@ -17,28 +17,28 @@ function cfg_parser {
 	if [ $CHANGE_EXTGLOB = 1 ]; then
 		shopt -s extglob
 	fi
-	ini="$(<$1)"                 # read the file
-	ini=${ini//$'\r'/}           # remove linefeed i.e dos2unix
+	ini="$(<"$1")"										# read the file
+	ini=${ini//$'\r'/}									# remove linefeed i.e dos2unix
 
 	ini="${ini//[/\\[}"
 	ini="${ini//]/\\]}"
-	IFS=$'\n' && ini=( ${ini} )  # convert to line-array
+	IFS=$'\n' && ini=( ${ini} )							# convert to line-array
 	ini=( ${ini[*]/#*([[:space:]]);*/} )
 	ini=( ${ini[*]/#*([[:space:]])\#*/} )
-	ini=( ${ini[*]/#+([[:space:]])/} ) # remove init whitespace
-	ini=( ${ini[*]/%+([[:space:]])/} ) # remove ending whitespace
-	ini=( ${ini[*]/*([[:space:]])=*([[:space:]])/=} ) # remove whitespace around =
-	ini=( ${ini[*]/#\\[/\}$'\n'"$PREFIX"} ) # set section prefix
-	ini=( ${ini[*]/%\\]/ \(} )   # convert text2function (1)
-	ini=( ${ini[*]/=/=\( } )     # convert item to array
-	ini=( ${ini[*]/%/ \)} )      # close array parenthesis
-	ini=( ${ini[*]/%\\ \)/ \\} ) # the multiline trick
-	ini=( ${ini[*]/%\( \)/\(\) \{} ) # convert text2function (2)
-	ini=( ${ini[*]/%\} \)/\}} )  # remove extra parenthesis
-	ini=( ${ini[*]/%\{/\{$'\n''cfg_unset ${FUNCNAME/#'$PREFIX'}'$'\n'} )  # clean previous definition of section 
-	ini[0]=""                    # remove first element
-	ini[${#ini[*]} + 1]='}'      # add the last brace
-	eval "$(echo "${ini[*]}")"   # eval the result
+	ini=( ${ini[*]/#+([[:space:]])/} )					# remove init whitespace
+	ini=( ${ini[*]/%+([[:space:]])/} )					# remove ending whitespace
+	ini=( ${ini[*]/*([[:space:]])=*([[:space:]])/=} )	# remove whitespace around =
+	ini=( ${ini[*]/#\\[/\}$'\n'"$PREFIX"} )				# set section prefix
+	ini=( ${ini[*]/%\\]/ \(} )							# convert text2function (1)
+	ini=( ${ini[*]/=/=\( } )							# convert item to array
+	ini=( ${ini[*]/%/ \)} )								# close array parenthesis
+	ini=( ${ini[*]/%\\ \)/ \\} )						# the multiline trick
+	ini=( ${ini[*]/%\( \)/\(\) \{} )					# convert text2function (2)
+	ini=( ${ini[*]/%\} \)/\}} )							# remove extra parenthesis
+	ini=( ${ini[*]/%\{/\{$'\n''cfg_unset ${FUNCNAME/#'$PREFIX'}'$'\n'} )	# clean previous definition of section
+	ini[0]=""											# remove first element
+	ini[${#ini[*]} + 1]='}'								# add the last brace
+	eval "$(printf '%s' "${ini[*]}")"					# eval the result
 	EVAL_STATUS=$?
 	if [ $CHANGE_EXTGLOB = 1 ]; then
 		shopt -u extglob
@@ -52,7 +52,7 @@ function cfg_unset {
 	if [ -z "$SECTION" ]; then
 		fun="$(declare -F)"
 	else
-		fun="$(declare -F $PREFIX$SECTION)"
+		fun="$(declare -F $PREFIX"$SECTION")"
 		if [ -z "$fun" ]; then
 			echo "section $SECTION not found" 1>&2
 			return
@@ -60,21 +60,21 @@ function cfg_unset {
 	fi
 	fun="${fun//declare -f/}"
 	for f in $fun; do
-		[ "${f#$PREFIX}" == "${f}" ] && continue
-		item="$(declare -f ${f})"
-		item="${item##*\{}" # remove function definition
-		item="${item##*FUNCNAME*$PREFIX\};}" # remove clear section
-		item="${item/\}}"  # remove function close
-		item="${item%)*}" # remove everything after parenthesis
-		item="${item});" # add close parenthesis
+		[ "${f#"$PREFIX"}" == "${f}" ] && continue
+		item="$(declare -f "${f}")"
+		item="${item##*\{}"						# remove function definition
+		item="${item##*FUNCNAME*"$PREFIX"\};}"	# remove clear section
+		item="${item/\}}"						# remove function close
+		item="${item%)*}"						# remove everything after parenthesis
+		item="${item});"						# add close parenthesis
 		vars=""
 		while [ "$item" != "" ]; do
-			newvar="${item%%=*}" # get item name
-			vars="$vars $newvar" # add name to collection
-			item="${item#*;}" # remove readed line
+			newvar="${item%%=*}"				# get item name
+			vars="$vars $newvar"				# add name to collection
+			item="${item#*;}"					# remove readed line
 		done
 		for var in $vars; do
-			unset $var
+			unset "$var"
 		done
 	done
 	IFS="$OLDIFS"
@@ -83,7 +83,7 @@ function cfg_unset {
 # Usage Message
 function usage {
 	echo "######## FEED-ACTIONS ########" 1>&2
-	if [ ! -z "${1}" ]; then
+	if [ -n "${1}" ]; then
 		echo "ERROR: $1" 1>&2
 	fi
 	echo "Usage: $0 [-u <feed url>] [-f <config file>] [-s <run only section>] [-t <trigger>] [-d <debug>] [-z <demo>]" 1>&2
@@ -94,8 +94,9 @@ function usage {
 
 # get Date from Web-Feed via "rsstail" and convert to Unix Timestamp
 function getdate {
-	local feeddate=$(rsstail -1 -n 1 -p -z -N -u "$1" 2>/dev/null | tail -n1 | sed 's/^[ \t]*//')
-	if [ -z $feeddate ]; then
+	local feeddate
+	feeddate=$(rsstail -1 -n 1 -p -z -N -u "$1" 2>/dev/null | tail -n1 | sed 's/^[ \t]*//')
+	if [ -z "$feeddate" ]; then
 		echo "ERROR"
 	else
 		date -d "${feeddate}" +"%s"
@@ -112,12 +113,12 @@ function checkurl {
 
 # Checksum
 function sha {
-	echo $1 | sha1sum | cut -f1 -d' '
+	echo "$1" | sha1sum | cut -f1 -d' '
 }
 
 # read sections from config file
 function readsections {
-	grep -Po '^[^#;]*\[\K[^]]*' $1
+	grep -Po '^[^#;]*\[\K[^]]*' "$1"
 }
 
 
@@ -128,18 +129,18 @@ while getopts "df:s:t:u:z" o; do
 			DEBUG=true
 			;;
 		f)
-			CFG_FILE=${OPTARG}
+			CFG_FILE=$OPTARG
 			NEW_CFG_FILE=true
 			;;
 		s)
-			CFG_SECTION=(${OPTARG})
+			CFG_SECTION=$OPTARG
 			;;
 		t)
-			TRIGGER=${OPTARG}
+			TRIGGER=$OPTARG
 			;;
 		u)
-			URL=${OPTARG}
-			checkurl $URL
+			URL=$OPTARG
+			checkurl "$URL"
 			;;
 		z)
 			DEMO_MODE=1
@@ -151,17 +152,17 @@ while getopts "df:s:t:u:z" o; do
 done
 shift $((OPTIND-1))
 
-if [ -f "${CFG_FILE}" ]; then
-	cfg_parser $CFG_FILE
-	if [ -z "${CFG_SECTION}" ]; then
-		readarray -t CFG_SECTION <<< "$(readsections $CFG_FILE)"
+if [ -f "$CFG_FILE" ]; then
+	cfg_parser "$CFG_FILE"
+	if [ -z "$CFG_SECTION" ]; then
+		readarray -t CFG_SECTION <<< "$(readsections "$CFG_FILE")"
 	fi
-elif ( [ ! -z "${NEW_CFG_FILE}" ] && [ ! -f "${CFG_FILE}" ] ) || ( [ -z "${URL}" ] && [ -z "${TRIGGER}" ] ); then
+elif { [ -n "$NEW_CFG_FILE" ] && [ ! -f "$CFG_FILE" ]; } || { [ -z "$URL" ] && [ -z "$TRIGGER" ]; }; then
 	usage "File $CFG_FILE not found!"
-elif [ ! -z "${URL}" ] && [ ! -z "${TRIGGER}" ]; then
+elif [ -n "$URL" ] && [ -n "$TRIGGER" ]; then
 	CFG_SECTION=(manually)
 	MANUAL_MODE=true
-elif [ -z "${URL}" ] || [ -z "${TRIGGER}" ]; then
+elif [ -z "$URL" ] || [ -z "$TRIGGER" ]; then
 	usage "URL or Trigger missing!"
 fi
 
@@ -171,46 +172,46 @@ fi
 
 
 ### Profit
-for section in ${CFG_SECTION[*]}; do
+for section in "${CFG_SECTION[@]}"; do
 
-	if [ -z "${MANUAL_MODE}" ]; then
-		cfg_section_$section
+	if [ -z "$MANUAL_MODE" ]; then
+		cfg_section_"$section"
 	fi
 
-	STAMP="$STAMPSDIR/$(sha $section).stamp"
-	CURRENT=$(getdate $URL)
+	STAMP="$STAMPSDIR/$(sha "$section").stamp"
+	CURRENT=$(getdate "$URL")
 
-	if [ $CURRENT = "ERROR" ]; then
+	if [ "$CURRENT" = "ERROR" ]; then
 		echo "Parser error: skipping [$section]"
 		continue
 	fi
 
 	if [ -f "$STAMP" ]; then
-		OLD=$(<$STAMP)
-		if [ $OLD != $CURRENT ]; then
-			echo "$section: Feed updated $(date --date=@$CURRENT +'%Y-%m-%d %H:%M:%S %z')"
+		OLD=$(<"$STAMP")
+		if [ "$OLD" != "$CURRENT" ]; then
+			echo "$section: Feed updated $(date --date=@"$CURRENT" +'%Y-%m-%d %H:%M:%S %z')"
 			if [ $DEMO_MODE = "1" ]; then
-				echo $TRIGGER
+				echo "$TRIGGER"
 				echo ">>> Demo Mode <<<"
 			else
-				eval $TRIGGER > /dev/null 2>&1
-				echo $CURRENT > $STAMP
+				eval "$TRIGGER" > /dev/null 2>&1
+				echo "$CURRENT" > "$STAMP"
 			fi
 		fi
 	else
 		echo "$section: First run"
 		if [ $DEMO_MODE != "1" ]; then
-			echo $CURRENT > $STAMP
+			echo "$CURRENT" > "$STAMP"
 		else
 			echo ">>> Demo Mode <<<"
 		fi
 	fi
 
-	if [ ! -z "${DEBUG}" ]; then
+	if [ -n "${DEBUG}" ]; then
 		echo "################## DEBUG ##################"
 		echo -e "SECTION\t=\t$section"
 		echo -e "URL\t=\t$URL"
-		echo -e "UPDATED\t=\t$(date --date=@$CURRENT +'%Y-%m-%d %H:%M:%S %z')"
+		echo -e "UPDATED\t=\t$(date --date=@"$CURRENT" +'%Y-%m-%d %H:%M:%S %z')"
 		echo -e "TRIGGER\t=\t$TRIGGER"
 		echo "###########################################"
 	fi

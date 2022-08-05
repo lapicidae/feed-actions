@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-cnf="/etc/mysql/conf.d/mysqlepgd.cnf"
-
 echo '
 --------------------------------------------------------------
                    ____  ____  ____  ____
@@ -45,8 +43,8 @@ if [ -d "/usr/share/zoneinfo/$TZ" ]; then
 	CURRENT_TZ=$(readlink /etc/localtime)
 	if [[ ! $CURRENT_TZ =~ $TZ ]]; then
 		unlink /etc/localtime
-		ln -s /usr/share/zoneinfo/$TZ /etc/localtime
-		echo $TZ >/etc/timezone
+		ln -s "/usr/share/zoneinfo/$TZ" /etc/localtime
+		echo "$TZ" >/etc/timezone
 		echo "New timezone $TZ set!"
 	fi
 fi
