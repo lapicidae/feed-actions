@@ -182,14 +182,14 @@ for section in "${CFG_SECTION[@]}"; do
 	CURRENT=$(getdate "$URL")
 
 	if [ "$CURRENT" = "ERROR" ]; then
-		echo "Parser error: skipping [$section]"
+		echo -e "<$section>\t$(date --rfc-3339='seconds')\n -> Parser error - skipping"
 		continue
 	fi
 
 	if [ -f "$STAMP" ]; then
 		OLD=$(<"$STAMP")
 		if [ "$OLD" != "$CURRENT" ]; then
-			echo "$section: Feed updated $(date --date=@"$CURRENT" +'%Y-%m-%d %H:%M:%S %z')"
+			echo -e "<$section>\t$(date --rfc-3339='seconds')\n -> Feed updated on $(date --date=@"$CURRENT" --rfc-3339='seconds')"
 			if [ $DEMO_MODE = "1" ]; then
 				echo "$TRIGGER"
 				echo ">>> Demo Mode <<<"
