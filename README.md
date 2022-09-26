@@ -62,7 +62,7 @@ docker run -d \
 Container images are configured using parameters passed at runtime.
 
 | Parameter | Function |
-| :----: | --- |
+|-----|-----|
 | `-e TZ=Europe/London` | Specify a [timezone](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List) to use (e.g. Europe/London) |
 
 
@@ -85,7 +85,12 @@ URL='http://www.test.org/feed.atom'
 TRIGGER='curl -X POST https://hub.docker.com/api/build/v1/source/r2136542-9h8d-6rfd-5687-21fc6d2365tz/trigger/fe67d9a4-3d8b-5963-a5d8-25dc46cf5879/call/'
 ```
 | Section | Function |
-| :----: | --- |
+|-----|-----|
 | `[name]` | Section name - **must be unique !!** |
 | `URL` | RSS or Atom Feed URL |
 | `TRIGGER` | Bash one-liner |
+
+
+## Note
+Take a look at [RSSHub](https://docs.rsshub.app/en/). 🍰 Everything is RSSible!
+
