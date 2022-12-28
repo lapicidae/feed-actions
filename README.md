@@ -1,14 +1,14 @@
 [![feed-actions](feed-actions-logo.svg)](https://github.com/lapicidae/feed-actions)
 
-Trigger action if Web-Feed (RSS or Atom) changes.
+Trigger action (shell script) if Web-Feed (RSS or Atom) changes.
 
 
 # [lapicidae/feed-actions](https://github.com/lapicidae/feed-actions)
 
-[![GitHub Stars](https://img.shields.io/github/stars/lapicidae/feed-actions.svg?color=3c0e7b&labelColor=555555&logoColor=ffffff&style=for-the-badge&logo=github)](https://github.com/lapicidae/feed-actions)
-[![Docker Pulls](https://img.shields.io/docker/pulls/lapicidae/feed-actions.svg?color=3c0e7b&labelColor=555555&logoColor=ffffff&style=for-the-badge&label=pulls&logo=docker)](https://hub.docker.com/r/lapicidae/feed-actions)
-[![Docker Stars](https://img.shields.io/docker/stars/lapicidae/feed-actions.svg?color=3c0e7b&labelColor=555555&logoColor=ffffff&style=for-the-badge&label=stars&logo=docker)](https://hub.docker.com/r/lapicidae/feed-actions)
-[![Build & Push](https://img.shields.io/github/workflow/status/lapicidae/feed-actions/Docker%20Build%20&%20Push?label=Build%20%26%20Push&labelColor=555555&logoColor=ffffff&style=for-the-badge&logo=github)](https://github.com/lapicidae/feed-actions/actions/workflows/docker.yml)
+[![GitHub Repo stars](https://img.shields.io/github/stars/lapicidae/feed-actions?color=3c0e7b&logo=github&logoColor=fff&style=for-the-badge)](https://github.com/lapicidae/feed-actions)
+[![Docker Pulls](https://img.shields.io/docker/pulls/lapicidae/feed-actions?color=3c0e7b&label=pulls&logo=docker&logoColor=fff&style=for-the-badge)](https://hub.docker.com/r/lapicidae/feed-actions)
+[![Docker Stars](https://img.shields.io/docker/stars/lapicidae/feed-actions?color=3c0e7b&label=stars&logo=docker&logoColor=fff&style=for-the-badge)](https://hub.docker.com/r/lapicidae/feed-actions)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/lapicidae/feed-actions/docker.yml?logo=github&logoColor=ffffff&style=for-the-badge)](https://github.com/lapicidae/feed-actions/actions/workflows/docker.yml)
 
 
 The Feed Actions Docker image is based on [Alpine Linux](https://alpinelinux.org/), [cron](https://en.wikipedia.org/wiki/Cron) and [rsstail](https://github.com/oldlaptop/rsstail).
