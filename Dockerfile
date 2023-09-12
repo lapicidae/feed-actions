@@ -8,7 +8,7 @@ ENV TZ="Europe/Berlin"
 COPY root/ /
 
 RUN echo "**** install runtime packages ****" && \
-    echo "@testing http://nl.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
+    echo "@testing https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
     apk add --no-cache --upgrade \
       bash \
       coreutils \
