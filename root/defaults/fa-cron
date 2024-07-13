@@ -1,2 +1,2 @@
-# crontab exampels -> https://crontab.guru
+# crontab examples -> https://crontab.guru
 2 3 * * * /bin/bash /usr/bin/feed-actions
