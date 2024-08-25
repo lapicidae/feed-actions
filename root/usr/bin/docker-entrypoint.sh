@@ -39,7 +39,7 @@ if [ ! -e /config/config.cfg ]; then
 fi
 
 # set timezone
-if [ -d "/usr/share/zoneinfo/$TZ" ]; then
+if [ -r "/usr/share/zoneinfo/$TZ" ]; then
 	CURRENT_TZ=$(readlink /etc/localtime)
 	if [[ ! $CURRENT_TZ =~ $TZ ]]; then
 		unlink /etc/localtime
