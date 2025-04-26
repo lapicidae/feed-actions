@@ -216,4 +216,6 @@ for section in "${CFG_SECTION[@]}"; do
 		echo "###########################################"
 	fi
 
+	sleep 5
+
 done
