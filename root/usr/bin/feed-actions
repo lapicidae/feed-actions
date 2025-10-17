@@ -1,221 +1,249 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 
 ### Config
-CFGDIR="/config"
-CFG_FILE="$CFGDIR/config.cfg"
-STAMPSDIR="$CFGDIR/.stamps"
-DEMO_MODE=0	# Trigger will not be executed
+cfgDir="/config"				# Default config directory
+cfgFile="$cfgDir/config.cfg"	# Config file path
+stampsDir="$cfgDir/.stamps"		# Directory for .stamp files
+demoMode=false					# Trigger will not be executed
+
+declare -A ini					# Associative array for INI data (section.key -> value)
+declare -a sectionList			# Array for section names
+
+debug=false
+cfgSection=()
+trigger=""
+url=""
+manualMode=false
+newCfgFile=false
 
 
 ### Functions
-# bash-ini-parser (https://github.com/albfan/bash-ini-parser)
-PREFIX="cfg_section_"
-function cfg_parser {
-	shopt -p extglob &> /dev/null
-	CHANGE_EXTGLOB=$?
-	if [ $CHANGE_EXTGLOB = 1 ]; then
-		shopt -s extglob
-	fi
-	ini="$(<"$1")"										# read the file
-	ini=${ini//$'\r'/}									# remove linefeed i.e dos2unix
-
-	ini="${ini//[/\\[}"
-	ini="${ini//]/\\]}"
-	IFS=$'\n' && ini=( ${ini} )							# convert to line-array
-	ini=( ${ini[*]/#*([[:space:]]);*/} )
-	ini=( ${ini[*]/#*([[:space:]])\#*/} )
-	ini=( ${ini[*]/#+([[:space:]])/} )					# remove init whitespace
-	ini=( ${ini[*]/%+([[:space:]])/} )					# remove ending whitespace
-	ini=( ${ini[*]/*([[:space:]])=*([[:space:]])/=} )	# remove whitespace around =
-	ini=( ${ini[*]/#\\[/\}$'\n'"$PREFIX"} )				# set section prefix
-	ini=( ${ini[*]/%\\]/ \(} )							# convert text2function (1)
-	ini=( ${ini[*]/=/=\( } )							# convert item to array
-	ini=( ${ini[*]/%/ \)} )								# close array parenthesis
-	ini=( ${ini[*]/%\\ \)/ \\} )						# the multiline trick
-	ini=( ${ini[*]/%\( \)/\(\) \{} )					# convert text2function (2)
-	ini=( ${ini[*]/%\} \)/\}} )							# remove extra parenthesis
-	ini=( ${ini[*]/%\{/\{$'\n''cfg_unset ${FUNCNAME/#'$PREFIX'}'$'\n'} )	# clean previous definition of section
-	ini[0]=""											# remove first element
-	ini[${#ini[*]} + 1]='}'								# add the last brace
-	eval "$(printf '%s' "${ini[*]}")"					# eval the result
-	EVAL_STATUS=$?
-	if [ $CHANGE_EXTGLOB = 1 ]; then
-		shopt -u extglob
-	fi
-	return $EVAL_STATUS
-}
-function cfg_unset {
-	SECTION=$1
-	OLDIFS="$IFS"
-	IFS=' '$'\n'
-	if [ -z "$SECTION" ]; then
-		fun="$(declare -F)"
-	else
-		fun="$(declare -F $PREFIX"$SECTION")"
-		if [ -z "$fun" ]; then
-			echo "section $SECTION not found" 1>&2
-			return
-		fi
-	fi
-	fun="${fun//declare -f/}"
-	for f in $fun; do
-		[ "${f#"$PREFIX"}" == "${f}" ] && continue
-		item="$(declare -f "${f}")"
-		item="${item##*\{}"						# remove function definition
-		item="${item##*FUNCNAME*"$PREFIX"\};}"	# remove clear section
-		item="${item/\}}"						# remove function close
-		item="${item%)*}"						# remove everything after parenthesis
-		item="${item});"						# add close parenthesis
-		vars=""
-		while [ "$item" != "" ]; do
-			newvar="${item%%=*}"				# get item name
-			vars="$vars $newvar"				# add name to collection
-			item="${item#*;}"					# remove readed line
-		done
-		for var in $vars; do
-			unset "$var"
-		done
-	done
-	IFS="$OLDIFS"
-}
-
-# Usage Message
-function usage {
-	echo "######## FEED-ACTIONS ########" 1>&2
-	if [ -n "${1}" ]; then
-		echo "ERROR: $1" 1>&2
-	fi
-	echo "Usage: $0 [-u <feed url>] [-f <config file>] [-s <run only section>] [-t <trigger>] [-d <debug>] [-z <demo>]" 1>&2
-	echo "Example: $0 -u https://opensource.org/taxonomy/term/8/feed -t 'echo TEST'" 1>&2
-	echo "##############################" 1>&2
+# Print usage/help message
+printUsage() {
+	{
+		printf "######## FEED-ACTIONS ########\n"
+		[[ -n "${1:-}" ]] && printf "ERROR: %s\n" "$1"
+		printf "Usage: %s [-u <feed url>] [-f <config file>] [-s <run only section>] [-t <trigger>] [-d <debug>] [-z <demo>]\n" "$0"
+		printf "Example: %s -u https://opensource.org/taxonomy/term/8/feed -t 'printf TEST'\n" "$0"
+		printf "##############################\n"
+	} >&2
 	exit 1
 }
 
-# get Date from Web-Feed via "rsstail" and convert to Unix Timestamp
-function getdate {
-	local feeddate
-	feeddate=$(rsstail -1 -n 1 -p -z -N -u "$1" 2>/dev/null | tail -n1 | sed 's/^[ \t]*//')
-	if [ -z "$feeddate" ]; then
-		echo "ERROR"
-	else
-		date -d "${feeddate}" +"%s"
+# Check for required commands
+checkDependencies() {
+	local missing=0
+	for cmd in rsstail sha1sum date; do
+		if ! command -v "$cmd" &> /dev/null; then
+			printf "ERROR: Required command '%s' not found.\n" "$cmd" >&2
+			missing=1
+		fi
+	done
+	if (( missing )); then
+		exit 1
 	fi
 }
 
-# check if URL valid
-function checkurl {
-	local CHECK='(https?|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
-	if ! [[ $1 =~ $CHECK ]]; then
-		usage "invalid URL"
+# Parse INI file into associative array ini and sectionList
+# inspired by bash-ini-parser (https://github.com/albfan/bash-ini-parser)
+parseIniFile() {
+	local file="$1"
+	local section=""
+	while IFS= read -r line || [[ -n $line ]]; do
+		line="${line%%\#*}"							# Remove everything after '#' (inline comments)
+		line="${line%%;*}"							# Remove everything after ';' (inline comments)
+		line="${line#"${line%%[![:space:]]*}"}"		# Remove leading whitespace
+		line="${line%"${line##*[![:space:]]}"}"		# Remove trailing whitespace
+		[[ -z $line ]] && continue					# Skip empty lines
+
+		if [[ $line =~ ^\[(.*)\]$ ]]; then
+			section="${BASH_REMATCH[1]}"
+			sectionList+=("$section")				# Collect section name
+		elif [[ $line =~ ^([^=]+)=(.*)$ && -n $section ]]; then
+			local key="${BASH_REMATCH[1]}"
+			local val="${BASH_REMATCH[2]}"
+			key="${key%"${key##*[![:space:]]}"}"	# Remove trailing whitespace from key
+			key="${key#"${key%%[![:space:]]*}"}"	# Remove leading whitespace from key
+			val="${val#"${val%%[![:space:]]*}"}"	# Remove leading whitespace from value
+			if [[ $val == \"*\" && $val == *\" ]]; then
+				val="${val:1:-1}"					# Remove surrounding double quotes from value
+			elif [[ $val == \'*\' && $val == *\' ]]; then
+				val="${val:1:-1}"					# Remove surrounding single quotes from value
+			fi
+			ini["$section.$key"]="$val"				# Store value in associative array
+		fi
+	done < "$file"
+}
+
+# Validate URL format
+validateUrl() {
+	local checkRegex='(https?|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
+	if ! [[ $1 =~ $checkRegex ]]; then
+		printUsage "invalid URL"
 	fi
 }
 
-# Checksum
-function sha {
-	echo "$1" | sha1sum | cut -f1 -d' '
+# Generate SHA1 hash for input
+sha1() {
+	printf '%s\n' "$1" | sha1sum | cut -d' ' -f1
 }
 
-# read sections from config file
-function readsections {
-	grep -Po '^[^#;]*\[\K[^]]*' "$1"
+# Obtain feed date as unix timestamp, with retries and exponential backoff
+getFeedDate() {
+	local url="$1"
+	local retries=5
+	local sleepTime=2
+	local feedDate
+	local i=1
+
+	while (( i <= retries )); do
+		feedDate=$(rsstail -1 -n 1 -p -z -N -T -u "$url" 2>/dev/null | tail -n1)
+		feedDate="${feedDate#"${feedDate%%[![:space:]]*}"}"		# Remove leading whitespace
+		feedDate="${feedDate%"${feedDate##*[![:space:]]}"}"		# Remove trailing whitespace
+		if [ -n "$feedDate" ]; then
+			date -d "$feedDate" +%s 2>/dev/null && return 0
+		fi
+		sleep $sleepTime
+		sleepTime=$((sleepTime * 2))
+		i=$((i+1))
+	done
+	printf "ERROR"
 }
 
+# Print debug output for a section
+printDebug() {
+	local section="$1"
+	local sectionUrl="$2"
+	local current="$3"
+	local sectionTrigger="$4"
+	printf "################## DEBUG ##################\n"
+	printf "SECTION\t=\t%s\n" "$section"
+	printf "URL\t=\t%s\n" "$sectionUrl"
+	printf "UPDATED\t=\t%s\n" "$(date --date="@$current" +'%Y-%m-%d %H:%M:%S %z')"
+	printf "TRIGGER\t=\t%s\n" "$sectionTrigger"
+	printf "###########################################\n"
+} 
 
-### check Parameters
+
+### Parse command line arguments
 while getopts "df:s:t:u:z" o; do
+
 	case "${o}" in
 		d)
-			DEBUG=true
+			debug=true
 			;;
 		f)
-			CFG_FILE=$OPTARG
-			NEW_CFG_FILE=true
+			cfgFile=$OPTARG
+			newCfgFile=true
 			;;
 		s)
-			CFG_SECTION=$OPTARG
+			cfgSection+=("$OPTARG")
 			;;
 		t)
-			TRIGGER=$OPTARG
+			trigger=$OPTARG
 			;;
 		u)
-			URL=$OPTARG
-			checkurl "$URL"
+			url=$OPTARG
+			validateUrl "$url"
 			;;
 		z)
-			DEMO_MODE=1
+			demoMode=true
 			;;
 		*)
-			usage
+			printUsage
 			;;
 	esac
 done
 shift $((OPTIND-1))
 
-if [ -f "$CFG_FILE" ]; then
-	cfg_parser "$CFG_FILE"
-	if [ -z "$CFG_SECTION" ]; then
-		readarray -t CFG_SECTION <<< "$(readsections "$CFG_FILE")"
+checkDependencies
+
+if [ -f "$cfgFile" ]; then
+	parseIniFile "$cfgFile"
+	if [ ${#cfgSection[@]} -eq 0 ]; then
+		cfgSection=("${sectionList[@]}")
 	fi
-elif { [ -n "$NEW_CFG_FILE" ] && [ ! -f "$CFG_FILE" ]; } || { [ -z "$URL" ] && [ -z "$TRIGGER" ]; }; then
-	usage "File $CFG_FILE not found!"
-elif [ -n "$URL" ] && [ -n "$TRIGGER" ]; then
-	CFG_SECTION=(manually)
-	MANUAL_MODE=true
-elif [ -z "$URL" ] || [ -z "$TRIGGER" ]; then
-	usage "URL or Trigger missing!"
+elif { [ -n "$newCfgFile" ] && [ ! -f "$cfgFile" ]; } || { [ -z "$url" ] && [ -z "$trigger" ]; }; then
+	printUsage "File $cfgFile not found!"
+elif [ -n "$url" ] && [ -n "$trigger" ]; then
+	cfgSection=("manually")
+	manualMode=true
+elif [ -z "$url" ] || [ -z "$trigger" ]; then
+	printUsage "URL or Trigger missing!"
 fi
 
-if [ ! -d "$STAMPSDIR" ] && [ $DEMO_MODE != "1" ]; then
-	mkdir -p $STAMPSDIR
+if [ ! -d "$stampsDir" ] && [ "$demoMode" = false ]; then
+	mkdir -p "$stampsDir"
 fi
 
 
 ### Profit
-for section in "${CFG_SECTION[@]}"; do
-
-	if [ -z "$MANUAL_MODE" ]; then
-		cfg_section_"$section"
+for section in "${cfgSection[@]}"; do
+	if [ "$manualMode" = true ]; then
+		sectionUrl="$url"
+		sectionTrigger="$trigger"
+	else
+		sectionUrl="${ini["$section.URL"]-}"
+		sectionTrigger="${ini["$section.TRIGGER"]-}"
 	fi
 
-	STAMP="$STAMPSDIR/$(sha "$section").stamp"
-	CURRENT=$(getdate "$URL")
+	# Unescape trigger
+	sectionTrigger="${sectionTrigger//\\\"/\"}"
+	sectionTrigger="$(printf '%b' "$sectionTrigger")"
 
-	if [ "$CURRENT" = "ERROR" ]; then
-		echo -e "<$section>\t$(date --rfc-3339='seconds')\n -> Parser error - skipping"
+	if [ -z "${sectionUrl:-}" ] || [ -z "${sectionTrigger:-}" ]; then
+		printf "%s: Missing URL or TRIGGER in config, skipping.\n" "$section"
 		continue
 	fi
 
-	if [ -f "$STAMP" ]; then
-		OLD=$(<"$STAMP")
-		if [ "$OLD" != "$CURRENT" ]; then
-			echo -e "<$section>\t$(date --rfc-3339='seconds')\n -> Feed updated on $(date --date=@"$CURRENT" --rfc-3339='seconds')"
-			if [ $DEMO_MODE = "1" ]; then
-				echo "$TRIGGER"
-				echo ">>> Demo Mode <<<"
+	stampFile="$stampsDir/$(sha1 "$section").stamp"
+	current="$(getFeedDate "$sectionUrl")"
+
+	if [[ "$current" == "ERROR" ]]; then
+		printf "<%s>\t%s\n -> Parser error - skipping\n" "$section" "$(date --rfc-3339=seconds)"
+		continue
+	fi
+
+	if [[ -f "$stampFile" ]]; then
+		old="$(<"$stampFile")"
+		if [[ "$old" != "$current" ]]; then
+			printf "<%s>\t%s\n -> Feed updated on %s\n" "$section" "$(date --rfc-3339=seconds)" "$(date --date="@$current" --rfc-3339=seconds)"
+			if [[ "$demoMode" = true ]]; then
+				printf "%s\n" "$sectionTrigger"
+				printf ">>> Demo Mode <<<\n"
+			elif [[ $debug == true ]]; then
+				if ! bash -c "$sectionTrigger"; then
+					printf "ERROR: Trigger for section '%s' failed.\n" "$section" >&2
+				else
+					printf "%s\n" "$current" > "$stampFile"
+				fi
 			else
-				eval "$TRIGGER" > /dev/null 2>&1
-				echo "$CURRENT" > "$STAMP"
+				if ! output=$(bash -c "$sectionTrigger" 2>&1); then
+					printf "ERROR: Trigger for section '%s' failed:\n%s\n" "$section" "$output" >&2
+				else
+					printf "%s\n" "$current" > "$stampFile"
+				fi
 			fi
 		fi
 	else
-		echo "$section: First run"
-		if [ $DEMO_MODE != "1" ]; then
-			echo "$CURRENT" > "$STAMP"
+		printf "%s: First run\n" "$section"
+		if [[ "$demoMode" = false ]]; then
+			printf "%s\n" "$current" > "$stampFile"
 		else
-			echo ">>> Demo Mode <<<"
+			printf ">>> Demo Mode <<<\n"
 		fi
 	fi
 
-	if [ -n "${DEBUG}" ]; then
-		echo "################## DEBUG ##################"
-		echo -e "SECTION\t=\t$section"
-		echo -e "URL\t=\t$URL"
-		echo -e "UPDATED\t=\t$(date --date=@"$CURRENT" +'%Y-%m-%d %H:%M:%S %z')"
-		echo -e "TRIGGER\t=\t$TRIGGER"
-		echo "###########################################"
+	if [[ $debug == true ]]; then
+		printDebug "$section" "$sectionUrl" "$current" "$sectionTrigger"
 	fi
 
-	sleep 5
-
+	# sleep $((5 + RANDOM % 16)) # Random sleep to avoid errors (uncomment if needed)
 done
+
+
+# vim: ts=4 sw=4 noet:
+# kate: space-indent off; indent-width 4; mixed-indent off;
