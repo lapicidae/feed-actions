@@ -21,11 +21,27 @@ newCfgFile=false
 
 
 ### Functions
+# Logging function
+# Usage: log <LEVEL> "Message"
+log() {
+	local level="$1"
+	shift
+	local message="$*"
+	local timestamp
+
+	if [[ "$level" == "DEBUG" && "$debug" != true ]]; then
+		return
+	fi
+
+	timestamp=$(date --rfc-3339=seconds)
+	printf "[%s] [%s] %s\n" "$timestamp" "$level" "$message" >&2
+}
+
 # Print usage/help message
 printUsage() {
+	[[ -n "${1:-}" ]] && log "ERROR" "$1"
 	{
 		printf "######## FEED-ACTIONS ########\n"
-		[[ -n "${1:-}" ]] && printf "ERROR: %s\n" "$1"
 		printf "Usage: %s [-u <feed url>] [-f <config file>] [-s <run only section>] [-t <trigger>] [-d <debug>] [-z <demo>]\n" "$0"
 		printf "Example: %s -u https://opensource.org/taxonomy/term/8/feed -t 'printf TEST'\n" "$0"
 		printf "##############################\n"
@@ -38,7 +54,7 @@ checkDependencies() {
 	local missing=0
 	for cmd in rsstail sha1sum date; do
 		if ! command -v "$cmd" &> /dev/null; then
-			printf "ERROR: Required command '%s' not found.\n" "$cmd" >&2
+			log "ERROR" "Required command '$cmd' not found."
 			missing=1
 		fi
 	done
@@ -52,6 +68,7 @@ checkDependencies() {
 parseIniFile() {
 	local file="$1"
 	local section=""
+	log "DEBUG" "Parsing config file: $file"
 	while IFS= read -r line || [[ -n $line ]]; do
 		line="${line%%\#*}"							# Remove everything after '#' (inline comments)
 		line="${line%%;*}"							# Remove everything after ';' (inline comments)
@@ -62,6 +79,7 @@ parseIniFile() {
 		if [[ $line =~ ^\[(.*)\]$ ]]; then
 			section="${BASH_REMATCH[1]}"
 			sectionList+=("$section")				# Collect section name
+			log "DEBUG" "Found section: [$section]"
 		elif [[ $line =~ ^([^=]+)=(.*)$ && -n $section ]]; then
 			local key="${BASH_REMATCH[1]}"
 			local val="${BASH_REMATCH[2]}"
@@ -74,6 +92,7 @@ parseIniFile() {
 				val="${val:1:-1}"					# Remove surrounding single quotes from value
 			fi
 			ini["$section.$key"]="$val"				# Store value in associative array
+			log "DEBUG" "[$section] $key = $val"
 		fi
 	done < "$file"
 }
@@ -99,33 +118,36 @@ getFeedDate() {
 	local feedDate
 	local i=1
 
+	log "DEBUG" "Fetching feed date for: $url"
 	while (( i <= retries )); do
 		feedDate=$(rsstail -1 -n 1 -p -z -N -T -u "$url" 2>/dev/null | tail -n1)
 		feedDate="${feedDate#"${feedDate%%[![:space:]]*}"}"		# Remove leading whitespace
 		feedDate="${feedDate%"${feedDate##*[![:space:]]}"}"		# Remove trailing whitespace
 		if [ -n "$feedDate" ]; then
+			log "DEBUG" "Successfully fetched raw date: '$feedDate'"
 			date -d "$feedDate" +%s 2>/dev/null && return 0
 		fi
+		log "DEBUG" "Failed to get feed date for '$url' on attempt $i. Retrying in $sleepTime seconds."
 		sleep $sleepTime
 		sleepTime=$((sleepTime * 2))
 		i=$((i+1))
 	done
+	log "ERROR" "Could not retrieve feed date for '$url' after $retries retries."
 	printf "ERROR"
 }
 
-# Print debug output for a section
-printDebug() {
+# Print debug summary for a section
+log_section_summary() {
 	local section="$1"
 	local sectionUrl="$2"
 	local current="$3"
 	local sectionTrigger="$4"
-	printf "################## DEBUG ##################\n"
-	printf "SECTION\t=\t%s\n" "$section"
-	printf "URL\t=\t%s\n" "$sectionUrl"
-	printf "UPDATED\t=\t%s\n" "$(date --date="@$current" +'%Y-%m-%d %H:%M:%S %z')"
-	printf "TRIGGER\t=\t%s\n" "$sectionTrigger"
-	printf "###########################################\n"
-} 
+	log "DEBUG" "--- Section '$section' Summary ---"
+	log "DEBUG" "  URL: $sectionUrl"
+	log "DEBUG" "  Feed's last update time: $(date --date="@$current" +'%Y-%m-%d %H:%M:%S %z')"
+	log "DEBUG" "  Trigger command: $sectionTrigger"
+	log "DEBUG" "---------------------------------"
+}
 
 
 ### Parse command line arguments
@@ -159,16 +181,25 @@ while getopts "df:s:t:u:z" o; do
 done
 shift $((OPTIND-1))
 
+log "DEBUG" "Starting up..."
+log "DEBUG" "Debug mode: $debug"
+log "DEBUG" "Demo mode: $demoMode"
+log "DEBUG" "Config file: $cfgFile"
+
 checkDependencies
 
 if [ -f "$cfgFile" ]; then
 	parseIniFile "$cfgFile"
 	if [ ${#cfgSection[@]} -eq 0 ]; then
+		log "DEBUG" "No specific sections provided, running for all sections in config."
 		cfgSection=("${sectionList[@]}")
+	else
+		log "DEBUG" "Running for specific sections: ${cfgSection[*]}"
 	fi
 elif { [ -n "$newCfgFile" ] && [ ! -f "$cfgFile" ]; } || { [ -z "$url" ] && [ -z "$trigger" ]; }; then
 	printUsage "File $cfgFile not found!"
 elif [ -n "$url" ] && [ -n "$trigger" ]; then
+	log "DEBUG" "Running in manual mode."
 	cfgSection=("manually")
 	manualMode=true
 elif [ -z "$url" ] || [ -z "$trigger" ]; then
@@ -176,12 +207,14 @@ elif [ -z "$url" ] || [ -z "$trigger" ]; then
 fi
 
 if [ ! -d "$stampsDir" ] && [ "$demoMode" = false ]; then
+	log "DEBUG" "Stamps directory not found. Creating '$stampsDir'."
 	mkdir -p "$stampsDir"
 fi
 
 
 ### Profit
 for section in "${cfgSection[@]}"; do
+	log "INFO" "Processing section: '$section'"
 	if [ "$manualMode" = true ]; then
 		sectionUrl="$url"
 		sectionTrigger="$trigger"
@@ -195,55 +228,67 @@ for section in "${cfgSection[@]}"; do
 	sectionTrigger="$(printf '%b' "$sectionTrigger")"
 
 	if [ -z "${sectionUrl:-}" ] || [ -z "${sectionTrigger:-}" ]; then
-		printf "%s: Missing URL or TRIGGER in config, skipping.\n" "$section"
+		log "WARN" "Section '$section': Missing URL or TRIGGER in config, skipping."
 		continue
 	fi
 
 	stampFile="$stampsDir/$(sha1 "$section").stamp"
+	log "DEBUG" "Section '$section': Stamp file is '$stampFile'"
 	current="$(getFeedDate "$sectionUrl")"
 
 	if [[ "$current" == "ERROR" ]]; then
-		printf "<%s>\t%s\n -> Parser error - skipping\n" "$section" "$(date --rfc-3339=seconds)"
+		log "ERROR" "Section '$section': Could not get feed date, skipping."
 		continue
 	fi
 
+	log "DEBUG" "Section '$section': Current feed timestamp is '$current'."
+
 	if [[ -f "$stampFile" ]]; then
 		old="$(<"$stampFile")"
+		log "DEBUG" "Section '$section': Old timestamp from stamp file is '$old'."
 		if [[ "$old" != "$current" ]]; then
-			printf "<%s>\t%s\n -> Feed updated on %s\n" "$section" "$(date --rfc-3339=seconds)" "$(date --date="@$current" --rfc-3339=seconds)"
+			log "INFO" "Section '$section': Feed has been updated since last check. New date: $(date --date="@$current" --rfc-3339=seconds)"
+			log "INFO" "Section '$section': Executing trigger."
 			if [[ "$demoMode" = true ]]; then
-				printf "%s\n" "$sectionTrigger"
-				printf ">>> Demo Mode <<<\n"
-			elif [[ $debug == true ]]; then
-				if ! bash -c "$sectionTrigger"; then
-					printf "ERROR: Trigger for section '%s' failed.\n" "$section" >&2
-				else
+				log "INFO" "Section '$section': DEMO MODE - Would execute: $sectionTrigger"
+			elif [[ "$debug" = true ]]; then
+				log "INFO" "Section '$section': Executing trigger (Debug Mode: output will be streamed directly)."
+				if bash -c "$sectionTrigger"; then
+					log "INFO" "Section '$section': Trigger executed successfully."
+					log "DEBUG" "Section '$section': Updating stamp file '$stampFile' with value '$current'."
 					printf "%s\n" "$current" > "$stampFile"
+				else
+					log "ERROR" "Section '$section': Trigger failed with exit code $?."
 				fi
 			else
 				if ! output=$(bash -c "$sectionTrigger" 2>&1); then
-					printf "ERROR: Trigger for section '%s' failed:\n%s\n" "$section" "$output" >&2
+					log "ERROR" "Section '$section': Trigger failed. Output was:\n$output"
 				else
+					log "INFO" "Section '$section': Trigger executed successfully."
 					printf "%s\n" "$current" > "$stampFile"
 				fi
 			fi
+		else
+			log "INFO" "Section '$section': Feed has not been updated. No action taken."
 		fi
 	else
-		printf "%s: First run\n" "$section"
+		log "INFO" "Section '$section': No stamp file found. Assuming first run."
 		if [[ "$demoMode" = false ]]; then
+			log "DEBUG" "Section '$section': Creating stamp file '$stampFile' with value '$current'."
 			printf "%s\n" "$current" > "$stampFile"
 		else
-			printf ">>> Demo Mode <<<\n"
+			log "INFO" "Section '$section': DEMO MODE - No stamp file created."
 		fi
 	fi
 
 	if [[ $debug == true ]]; then
-		printDebug "$section" "$sectionUrl" "$current" "$sectionTrigger"
+		log_section_summary "$section" "$sectionUrl" "$current" "$sectionTrigger"
 	fi
 
 	# sleep $((5 + RANDOM % 16)) # Random sleep to avoid errors (uncomment if needed)
 done
 
+log "DEBUG" "Script finished."
 
 # vim: ts=4 sw=4 noet:
 # kate: space-indent off; indent-width 4; mixed-indent off;
